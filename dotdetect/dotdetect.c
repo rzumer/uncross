@@ -17,6 +17,106 @@ static void VS_CC init(VSMap *in, VSMap *out, void **instanceData, VSNode *node,
 	vsapi->setVideoInfo(d->vi, 1, node);
 }
 
+// Read plane data into a matrix.
+static int **readPlaneMatrix(const VSFrameRef *frame, int plane, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	// Allocate destination matrix.
+	int **planeData = malloc(height * sizeof *planeData);
+
+	for (int i = 0; i < height; i++) {
+		planeData[i] = malloc(width * sizeof *planeData[i]);
+	}
+
+	// Read the frame data into the matrix.
+	const uint8_t *srcp = vsapi->getReadPtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			planeData[y][x] = srcp[x];
+		}
+
+		srcp += stride;
+	}
+
+	return planeData;
+}
+
+// Write plane data from a matrix to a frame.
+static void writePlaneMatrix(VSFrameRef *frame, int plane, int **planeData, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	uint8_t *dstp = vsapi->getWritePtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	// Write frame data from the matrix.
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			dstp[x] = planeData[y][x];
+		}
+
+		dstp += stride;
+	}
+}
+
+int **generateDotCrawlMap(const VSFrameRef *frame, int threshold, const VSAPI *vsapi) {
+	int plane = 0; // Y plane index assuming YUV or YIQ input
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	// Allocate destination matrix.
+	int **dcMap = malloc(height * sizeof *dcMap);
+
+	for (int i = 0; i < height; i++) {
+		dcMap[i] = malloc(width * sizeof *dcMap[i]);
+	}
+
+	// Read the frame data into the matrix.
+	const uint8_t *srcp = vsapi->getReadPtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; (x + 5) < width; x++) {
+			dcMap[y][x] = 0;
+
+			if (y > 0) {
+				// compare values across rows
+				int curY = srcp[x];
+				srcp -= stride;
+				int prevY = srcp[x];
+				srcp += stride; // back to the current row
+
+				if (prevY == curY) {
+					continue;
+				}
+			}
+			if (y < height - 1) {
+				// compare values across rows
+				int curY = srcp[x];
+				srcp += stride;
+				int nextY = srcp[x];
+				srcp -= stride; // back to the current row
+
+				if (curY == nextY) {
+					continue;
+				}
+			}
+
+			if (abs(srcp[x] - srcp[x + 2]) - abs(srcp[x + 2] - srcp[x + 4]) < threshold
+				&& abs(srcp[x + 1] - srcp[x + 3]) - abs(srcp[x + 3] + srcp[x + 5]) < threshold) {
+				dcMap[y][x] = 255;
+			}
+		}
+
+		srcp += stride;
+	}
+
+	return dcMap;
+}
+
 // This is the main function that gets called when a frame should be produced. It will, in most cases, get
 // called several times to produce one frame. This state is being kept track of by the value of
 // activationReason. The first call to produce a certain frame n is always arInitial. In this state
@@ -29,10 +129,14 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 
 	if (activationReason == arInitial) {
 		// Request the source frame on the first call
+
 		vsapi->requestFrameFilter(n, d->node, frameCtx);
 	}
 	else if (activationReason == arAllFramesReady) {
-		const VSFrameRef *src = vsapi->getFrameFilter(n, d->node, frameCtx);
+
+		const VSFrameRef *src = malloc(sizeof(src));
+
+		src = vsapi->getFrameFilter(n, d->node, frameCtx);
 
 		// The reason we query this on a per frame basis is because we want our filter
 		// to accept clips with varying dimensions. If we reject such content using d->vi
@@ -46,6 +150,12 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		// are an essential part of the filter chain and you should NEVER break it.
 		VSFrameRef *dst = vsapi->newVideoFrame(fi, width, height, src, core);
 
+		int **dcMap = generateDotCrawlMap(src, d->threshold, vsapi);
+
+		// write the DCMap in the Y plane
+		writePlaneMatrix(dst, 0, dcMap, vsapi);
+
+		free(dcMap);
 		vsapi->freeFrame(src);
 		return dst;
 	}
