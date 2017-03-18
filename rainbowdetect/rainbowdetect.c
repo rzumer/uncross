@@ -21,6 +21,95 @@ static void VS_CC init(VSMap *in, VSMap *out, void **instanceData, VSNode *node,
 	vsapi->setVideoInfo(d->vi, 1, node);
 }
 
+// Read plane data into a matrix.
+static int **readPlaneMatrix(const VSFrameRef *frame, int plane, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	// Allocate destination matrix.
+	int **planeData = malloc(height * sizeof *planeData);
+
+	for (int i = 0; i < height; i++) {
+		planeData[i] = malloc(width * sizeof *planeData[i]);
+	}
+
+	// Read the frame data into the matrix.
+	const uint8_t *srcp = vsapi->getReadPtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			planeData[y][x] = srcp[x];
+		}
+
+		srcp += stride;
+	}
+
+	return planeData;
+}
+
+// Write plane data from a matrix to a frame.
+static void writePlaneMatrix(VSFrameRef *frame, int plane, int **planeData, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	uint8_t *dstp = vsapi->getWritePtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	// Write frame data from the matrix.
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			dstp[x] = planeData[y][x];
+		}
+
+		dstp += stride;
+	}
+}
+
+int **generateRainbowMap(const VSFrameRef *frame, const VSFrameRef *previous, VideoData *context, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(frame, 0); // same for all planes with YUV444P8
+	int width = vsapi->getFrameWidth(frame, 0); // same for all planes with YUV444P8
+
+	// Allocate destination matrix.
+	int **rbMap = malloc(height * sizeof *rbMap);
+
+	for (int i = 0; i < height; i++) {
+		rbMap[i] = malloc(width * sizeof *rbMap[i]);
+	}
+
+	// Read the frame data into the matrix.
+	const uint8_t *srcpy = vsapi->getReadPtr(frame, 0); // y plane pointer
+	const uint8_t *srcpu = vsapi->getReadPtr(frame, 1); // u plane pointer
+	const uint8_t *srcpv = vsapi->getReadPtr(frame, 2); // v plane pointer
+	const uint8_t *prepu = vsapi->getReadPtr(previous, 1); // u previous plane pointer
+	const uint8_t *prepv = vsapi->getReadPtr(previous, 2); // v previous plane pointer
+
+	int stride = vsapi->getStride(frame, 0); // same for all planes with YUV444P8
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			rbMap[y][x] = 0;
+
+			int du = abs(srcpu[x] - prepu[x]);
+			int dv = abs(srcpv[x] - prepv[x]);
+
+			if (srcpy[x] > context->threshY
+				&& (context->threshU1 < du && du > context->threshU2
+				|| context->threshV1 < dv && dv > context->threshV2)) {
+				rbMap[y][x] = 255;
+			}
+		}
+
+		srcpy += stride;
+		srcpu += stride;
+		srcpv += stride;
+		prepu += stride;
+		prepv += stride;
+	}
+
+	return rbMap;
+}
+
 // This is the main function that gets called when a frame should be produced. It will, in most cases, get
 // called several times to produce one frame. This state is being kept track of by the value of
 // activationReason. The first call to produce a certain frame n is always arInitial. In this state
@@ -60,8 +149,14 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 
 		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
 
-		vsapi->freeFrame(src);
+		int **rbMap = generateRainbowMap(src, pre, d, vsapi);
+
+		// write the DCMap in the Y plane
+		writePlaneMatrix(dst, 0, rbMap, vsapi);
+
+		free(rbMap);
 		vsapi->freeFrame(pre);
+		vsapi->freeFrame(src);
 		return dst;
 	}
 
@@ -103,6 +198,22 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	if (err)
 		d.threshY = 10;
 
+	d.threshU1 = !!vsapi->propGetInt(in, "threshU1", 0, &err);
+	if (err)
+		d.threshU1 = 5;
+
+	d.threshV1 = !!vsapi->propGetInt(in, "threshV1", 0, &err);
+	if (err)
+		d.threshV1 = 5;
+
+	d.threshU2 = !!vsapi->propGetInt(in, "threshU2", 0, &err);
+	if (err)
+		d.threshU2 = 20;
+
+	d.threshV2 = !!vsapi->propGetInt(in, "threshV2", 0, &err);
+	if (err)
+		d.threshV2 = 20;
+
 	if (d.threshY < 0 || d.threshU1 < 0 || d.threshU2 < 0 || d.threshV1 < 0 || d.threshV2 < 0) {
 		vsapi->setError(out, "RainbowDetect: threshold must be a positive value");
 		vsapi->freeNode(d.node);
@@ -115,8 +226,8 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 		return;
 	}
 
-	if (d.vi->format->colorFamily != cmYUV) {
-		vsapi->setError(out, "RainbowDetect: YUV input is required");
+	if (d.vi->format->id != pfYUV444P8) {
+		vsapi->setError(out, "RainbowDetect: YUV444P8 input is required");
 		vsapi->freeNode(d.node);
 		return;
 	}
