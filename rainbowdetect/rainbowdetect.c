@@ -6,7 +6,11 @@ typedef struct {
 	VSNodeRef *node;
 	const VSVideoInfo *vi;
 
-	int threshold;
+	int threshY;
+	int threshU1;
+	int threshV1;
+	int threshU2;
+	int threshV2;
 } VideoData;
 
 // This function is called immediately after vsapi->createFilter(). This is the only place where the video
@@ -28,7 +32,11 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 	VideoData *d = (VideoData *)* instanceData;
 
 	if (activationReason == arInitial) {
-		// Request the source frame on the first call
+		// Request the source frames on the first call
+		if (n > 0) {
+			vsapi->requestFrameFilter(n - 1, d->node, frameCtx);
+		}
+
 		vsapi->requestFrameFilter(n, d->node, frameCtx);
 	}
 	else if (activationReason == arAllFramesReady) {
@@ -46,7 +54,14 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		// are an essential part of the filter chain and you should NEVER break it.
 		VSFrameRef *dst = vsapi->newVideoFrame(fi, width, height, src, core);
 
+		if (n == 0) {
+			return dst;
+		}
+
+		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
+
 		vsapi->freeFrame(src);
+		vsapi->freeFrame(pre);
 		return dst;
 	}
 
@@ -73,7 +88,7 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	// In this first version we only want to handle 8bit integer formats. Note that
 	// vi->format can be 0 if the input clip can change format midstream.
 	if (!isConstantFormat(d.vi) || d.vi->format->sampleType != stInteger || d.vi->format->bitsPerSample != 8) {
-		vsapi->setError(out, "DotDetect: only constant format 8-bit integer input supported");
+		vsapi->setError(out, "RainbowDetect: only constant format 8-bit integer input supported");
 		vsapi->freeNode(d.node);
 		return;
 	}
@@ -84,12 +99,18 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	// strict checking because of what we wrote in the argument string, the only
 	// reason this could fail is when the value wasn't set by the user.
 	// And when it's not set we want it to default to enabled.
-	d.threshold = !!vsapi->propGetInt(in, "threshold", 0, &err);
+	d.threshY = !!vsapi->propGetInt(in, "threshY", 0, &err);
 	if (err)
-		d.threshold = 2;
+		d.threshY = 10;
 
-	if (d.threshold < 0) {
-		vsapi->setError(out, "DotDetect: threshold must be a positive value");
+	if (d.threshY < 0 || d.threshU1 < 0 || d.threshU2 < 0 || d.threshV1 < 0 || d.threshV2 < 0) {
+		vsapi->setError(out, "RainbowDetect: threshold must be a positive value");
+		vsapi->freeNode(d.node);
+		return;
+	}
+
+	if (d.threshU2 < d.threshU1 || d.threshV2 < d.threshV1) {
+		vsapi->setError(out, "RainbowDetect: thresh2 must be greater than thresh1");
 		vsapi->freeNode(d.node);
 		return;
 	}
@@ -113,7 +134,7 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	// prefetch (such as a cache filter).
 	// If your filter is really fast (such as a filter that only resorts frames) you should set the
 	// nfNoCache flag to make the caching work smoother.
-	vsapi->createFilter(in, out, "DotDetect", init, getFrame, freeResources, fmParallel, 0, data, core);
+	vsapi->createFilter(in, out, "RainbowDetect", init, getFrame, freeResources, fmParallel, 0, data, core);
 }
 
 //////////////////////////////////////////
@@ -143,6 +164,6 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 // or not empty arrays are accepted
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
-	configFunc("github.com.rzumer.dotdetect", "dotdetect", "Dot Detect", VAPOURSYNTH_API_VERSION, 1, plugin);
-	registerFunc("Detect", "clip:clip;threshold:int:opt;", create, 0, plugin);
+	configFunc("github.com.rzumer.rainbowdetect", "rainbowdetect", "Rainbow Detect", VAPOURSYNTH_API_VERSION, 1, plugin);
+	registerFunc("Detect", "clip:clip;threshY:int:opt;threshU1:int:opt;threshV1:int:opt;threshU2:int:opt;threshV2:int:opt;", create, 0, plugin);
 }
