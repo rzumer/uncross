@@ -5,12 +5,6 @@
 typedef struct {
 	VSNodeRef *node;
 	const VSVideoInfo *vi;
-
-	int threshY;
-	int threshU1;
-	int threshV1;
-	int threshU2;
-	int threshV2;
 } VideoData;
 
 // This function is called immediately after vsapi->createFilter(). This is the only place where the video
@@ -21,93 +15,34 @@ static void VS_CC init(VSMap *in, VSMap *out, void **instanceData, VSNode *node,
 	vsapi->setVideoInfo(d->vi, 1, node);
 }
 
-// Read plane data into a matrix.
-static int **readPlaneMatrix(const VSFrameRef *frame, int plane, const VSAPI *vsapi) {
-	int height = vsapi->getFrameHeight(frame, plane);
-	int width = vsapi->getFrameWidth(frame, plane);
+static void blurDots(const VSFrameRef *src, VSFrameRef *dst, const VSAPI *vsapi) {
+	int height = vsapi->getFrameHeight(src, 0); // same for all planes with YUV444P8
+	int width = vsapi->getFrameWidth(src, 0); // same for all planes with YUV444P8
 
-	// Allocate destination matrix.
-	int **planeData = malloc(height * sizeof *planeData);
+	// Process the frame data.
+	const uint8_t *srcpy = vsapi->getReadPtr(src, 0);
+	const uint8_t *srcpu = vsapi->getReadPtr(src, 1);
+	const uint8_t *srcpv = vsapi->getReadPtr(src, 2);
+	uint8_t *dstpy = vsapi->getWritePtr(dst, 0);
+	uint8_t *dstpu = vsapi->getWritePtr(dst, 1);
+	uint8_t *dstpv = vsapi->getWritePtr(dst, 2);
 
-	for (int i = 0; i < height; i++) {
-		planeData[i] = malloc(width * sizeof *planeData[i]);
-	}
-
-	// Read the frame data into the matrix.
-	const uint8_t *srcp = vsapi->getReadPtr(frame, plane);
-	int stride = vsapi->getStride(frame, plane);
+	int stride = vsapi->getStride(src, 0);
 
 	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			planeData[y][x] = srcp[x];
-		}
-
-		srcp += stride;
-	}
-
-	return planeData;
-}
-
-// Write plane data from a matrix to a frame.
-static void writePlaneMatrix(VSFrameRef *frame, int plane, int **planeData, const VSAPI *vsapi) {
-	int height = vsapi->getFrameHeight(frame, plane);
-	int width = vsapi->getFrameWidth(frame, plane);
-
-	uint8_t *dstp = vsapi->getWritePtr(frame, plane);
-	int stride = vsapi->getStride(frame, plane);
-
-	// Write frame data from the matrix.
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			dstp[x] = planeData[y][x];
-		}
-
-		dstp += stride;
-	}
-}
-
-int **generateRainbowMap(const VSFrameRef *frame, const VSFrameRef *previous, VideoData *context, const VSAPI *vsapi) {
-	int height = vsapi->getFrameHeight(frame, 0); // same for all planes with YUV444P8
-	int width = vsapi->getFrameWidth(frame, 0); // same for all planes with YUV444P8
-
-	// Allocate destination matrix.
-	int **rbMap = malloc(height * sizeof *rbMap);
-
-	for (int i = 0; i < height; i++) {
-		rbMap[i] = malloc(width * sizeof *rbMap[i]);
-	}
-
-	// Read the frame data into the matrix.
-	const uint8_t *srcpy = vsapi->getReadPtr(frame, 0); // y plane pointer
-	const uint8_t *srcpu = vsapi->getReadPtr(frame, 1); // u plane pointer
-	const uint8_t *srcpv = vsapi->getReadPtr(frame, 2); // v plane pointer
-	const uint8_t *prepu = vsapi->getReadPtr(previous, 1); // u previous plane pointer
-	const uint8_t *prepv = vsapi->getReadPtr(previous, 2); // v previous plane pointer
-
-	int stride = vsapi->getStride(frame, 0);
-
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			rbMap[y][x] = 0;
-
-			int du = abs(srcpu[x] - prepu[x]);
-			int dv = abs(srcpv[x] - prepv[x]);
-
-			if (srcpy[x] > context->threshY
-				&& (context->threshU1 < du && du > context->threshU2
-				|| context->threshV1 < dv && dv > context->threshV2)) {
-				rbMap[y][x] = 255;
-			}
+		for (int x = 0; (x + 3) < width; x++) {
+			dstpy[x] = (int)round((double)(srcpy[x] + srcpy[x + 1] + srcpy[x + 2] + srcpy[x + 3]) / 4);
+			dstpu[x] = (int)round((double)(srcpu[x] + srcpu[x + 1] + srcpu[x + 2] + srcpu[x + 3]) / 4);
+			dstpv[x] = (int)round((double)(srcpv[x] + srcpv[x + 1] + srcpv[x + 2] + srcpv[x + 3]) / 4);
 		}
 
 		srcpy += stride;
 		srcpu += stride;
 		srcpv += stride;
-		prepu += stride;
-		prepv += stride;
+		dstpy += stride;
+		dstpu += stride;
+		dstpv += stride;
 	}
-
-	return rbMap;
 }
 
 // This is the main function that gets called when a frame should be produced. It will, in most cases, get
@@ -121,15 +56,15 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 	VideoData *d = (VideoData *)* instanceData;
 
 	if (activationReason == arInitial) {
-		// Request the source frames on the first call
-		if (n > 0) {
-			vsapi->requestFrameFilter(n - 1, d->node, frameCtx);
-		}
+		// Request the source frame on the first call
 
 		vsapi->requestFrameFilter(n, d->node, frameCtx);
 	}
 	else if (activationReason == arAllFramesReady) {
-		const VSFrameRef *src = vsapi->getFrameFilter(n, d->node, frameCtx);
+
+		const VSFrameRef *src = malloc(sizeof(src));
+
+		src = vsapi->getFrameFilter(n, d->node, frameCtx);
 
 		// The reason we query this on a per frame basis is because we want our filter
 		// to accept clips with varying dimensions. If we reject such content using d->vi
@@ -138,24 +73,10 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		int height = vsapi->getFrameHeight(src, 0);
 		int width = vsapi->getFrameWidth(src, 0);
 
-		// When creating a new frame for output it is VERY EXTREMELY SUPER IMPORTANT to
-		// supply the "dominant" source frame to copy properties from. Frame props
-		// are an essential part of the filter chain and you should NEVER break it.
-		VSFrameRef *dst = vsapi->newVideoFrame(fi, width, height, src, core);
+		VSFrameRef *dst = vsapi->copyFrame(src, core);
 
-		if (n == 0) {
-			return dst;
-		}
+		blurDots(src, dst, vsapi);
 
-		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
-
-		int **rbMap = generateRainbowMap(src, pre, d, vsapi);
-
-		// write the DCMap in the Y plane
-		writePlaneMatrix(dst, 0, rbMap, vsapi);
-
-		free(rbMap);
-		vsapi->freeFrame(pre);
 		vsapi->freeFrame(src);
 		return dst;
 	}
@@ -174,7 +95,6 @@ static void VS_CC freeResources(void *instanceData, VSCore *core, const VSAPI *v
 static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *core, const VSAPI *vsapi) {
 	VideoData d;
 	VideoData *data;
-	int err;
 
 	// Get a clip reference from the input arguments. This must be freed later.
 	d.node = vsapi->propGetNode(in, "clip", 0, 0);
@@ -183,45 +103,7 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	// In this first version we only want to handle 8bit integer formats. Note that
 	// vi->format can be 0 if the input clip can change format midstream.
 	if (!isConstantFormat(d.vi) || d.vi->format->sampleType != stInteger || d.vi->format->bitsPerSample != 8) {
-		vsapi->setError(out, "RainbowDetect: only constant format 8-bit integer input supported");
-		vsapi->freeNode(d.node);
-		return;
-	}
-	
-	// If a property read fails for some reason (index out of bounds/wrong type)
-	// then err will have flags set to indicate why and 0 will be returned. This
-	// can be very useful to know when having optional arguments. Since we have
-	// strict checking because of what we wrote in the argument string, the only
-	// reason this could fail is when the value wasn't set by the user.
-	// And when it's not set we want it to default to enabled.
-	d.threshY = !!vsapi->propGetInt(in, "threshY", 0, &err);
-	if (err)
-		d.threshY = 10;
-
-	d.threshU1 = !!vsapi->propGetInt(in, "threshU1", 0, &err);
-	if (err)
-		d.threshU1 = 5;
-
-	d.threshV1 = !!vsapi->propGetInt(in, "threshV1", 0, &err);
-	if (err)
-		d.threshV1 = 5;
-
-	d.threshU2 = !!vsapi->propGetInt(in, "threshU2", 0, &err);
-	if (err)
-		d.threshU2 = 20;
-
-	d.threshV2 = !!vsapi->propGetInt(in, "threshV2", 0, &err);
-	if (err)
-		d.threshV2 = 20;
-
-	if (d.threshY < 0 || d.threshU1 < 0 || d.threshU2 < 0 || d.threshV1 < 0 || d.threshV2 < 0) {
-		vsapi->setError(out, "RainbowDetect: threshold must be a positive value");
-		vsapi->freeNode(d.node);
-		return;
-	}
-
-	if (d.threshU2 < d.threshU1 || d.threshV2 < d.threshV1) {
-		vsapi->setError(out, "RainbowDetect: thresh2 must be greater than thresh1");
+		vsapi->setError(out, "DotBlur: only constant format 8-bit integer input supported");
 		vsapi->freeNode(d.node);
 		return;
 	}
@@ -251,7 +133,7 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	// prefetch (such as a cache filter).
 	// If your filter is really fast (such as a filter that only resorts frames) you should set the
 	// nfNoCache flag to make the caching work smoother.
-	vsapi->createFilter(in, out, "RainbowDetect", init, getFrame, freeResources, fmParallel, 0, data, core);
+	vsapi->createFilter(in, out, "DotBlur", init, getFrame, freeResources, fmParallel, 0, data, core);
 }
 
 //////////////////////////////////////////
@@ -281,6 +163,6 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 // or not empty arrays are accepted
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
-	configFunc("github.com.rzumer.rainbowdetect", "rainbowdetect", "Rainbow Detect", VAPOURSYNTH_API_VERSION, 1, plugin);
-	registerFunc("Detect", "clip:clip;threshY:int:opt;threshU1:int:opt;threshV1:int:opt;threshU2:int:opt;threshV2:int:opt;", create, 0, plugin);
+	configFunc("github.com.rzumer.dotblue", "dotblur", "Dot Blur", VAPOURSYNTH_API_VERSION, 1, plugin);
+	registerFunc("Blur", "clip:clip;", create, 0, plugin);
 }
