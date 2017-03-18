@@ -94,6 +94,12 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 		return;
 	}
 
+	if (d.vi->format->colorFamily != cmYUV) {
+		vsapi->setError(out, "DotDetect: YUV input is required");
+		vsapi->freeNode(d.node);
+		return;
+	}
+
 	// I usually keep the filter data struct on the stack and don't allocate it
 	// until all the input validation is done.
 	data = malloc(sizeof(d));
