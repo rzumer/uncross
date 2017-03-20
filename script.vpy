@@ -1,6 +1,6 @@
 import vapoursynth as vs
 core = vs.get_core()
-#video = <insert your source filter here>
+video = core.ffms2.Source('J:/rainbow.webm')
 
 # Any pre-processing to video should be performed here
 
@@ -10,15 +10,20 @@ pre = video[0] + video
 super = core.mv.Super(video, hpad=0, vpad=0, pel=1, chroma=True, rfilter=0)
 
 # mmap
-anal = core.mv.Analyse(super=super, blksize=4, search=3, searchparam=4, chroma=False, truemotion=False)
-mmask = core.mv.Mask(clip=video, vectors=anal, ml=2, time=0, thscd1=0, thscd2=255)
+anal = core.mv.Analyse(super=super, blksize=4, search=3, searchparam=2, chroma=False, truemotion=False)
+anal = core.mv.Recalculate(super, anal, 32, 0, 4, search=3, searchparam=2, chroma=False, truemotion=False)
+mmask = core.mv.Mask(clip=video, vectors=anal, ml=1, time=0, thscd1=0, thscd2=255)
+#mmask2 = core.mv.Mask(clip=video, vectors=anal, ml=2, time=0, thscd1=400, thscd2=130)
 mmask = core.std.Binarize(mmask,threshold=255,v0=0,v1=255,planes=[0])
+#mmask2 = core.std.Binarize(mmask2,threshold=255,v0=0,v1=255,planes=[0])
 mmask = core.std.ShufflePlanes(mmask, [0,0,0], vs.YUV)
+#mmask2 = core.std.ShufflePlanes(mmask2, [0,0,0], vs.YUV)
 mmask = core.resize.Bilinear(mmask,format=vs.YUV420P8)
+#mmask2 = core.resize.Bilinear(mmask2,format=vs.YUV420P8)
 
 # mcmap
-comp = core.mv.Compensate(clip=video, super=super, vectors=anal)#, thsad=16)
-precomp = comp[0] + comp
+comp = core.mv.Compensate(clip=video, super=super, vectors=anal)#,time=0)#, thsad=32)
+#precomp = comp[0] + comp
 mcmask = core.std.MakeDiff(video, comp, 0)
 above = core.std.Binarize(mcmask,threshold=127+16,v0=0,v1=255,planes=[0])
 below = core.std.Binarize(mcmask,threshold=127-16,v0=255,v1=0,planes=[0])
