@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.25123.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "uncross", "uncross\uncross.vcxproj", "{9DDE26F5-5C94-4EC0-9718-ACED07630772}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dotdetect", "dotdetect\dotdetect.vcxproj", "{AC02725F-7B82-4EF5-AD23-B364B82CCE2B}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rainbowdetect", "rainbowdetect\rainbowdetect.vcxproj", "{3B00D0F2-4648-4FAD-B9DB-1F045EB101F3}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dotblur", "dotblur\dotblur.vcxproj", "{81DD7008-7C95-4FCD-8853-BA3D47A2AD16}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "motiondetect", "motiondetect\motiondetect.vcxproj", "{9DDE26F5-5C94-4EC0-9718-ACED07630772}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,14 +19,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x64.ActiveCfg = Debug|x64
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x64.Build.0 = Debug|x64
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x86.ActiveCfg = Debug|Win32
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x86.Build.0 = Debug|Win32
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x64.ActiveCfg = Release|x64
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x64.Build.0 = Release|x64
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x86.ActiveCfg = Release|Win32
-		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x86.Build.0 = Release|Win32
 		{AC02725F-7B82-4EF5-AD23-B364B82CCE2B}.Debug|x64.ActiveCfg = Debug|x64
 		{AC02725F-7B82-4EF5-AD23-B364B82CCE2B}.Debug|x64.Build.0 = Debug|x64
 		{AC02725F-7B82-4EF5-AD23-B364B82CCE2B}.Debug|x86.ActiveCfg = Debug|Win32
@@ -51,6 +43,14 @@ Global
 		{81DD7008-7C95-4FCD-8853-BA3D47A2AD16}.Release|x64.Build.0 = Release|x64
 		{81DD7008-7C95-4FCD-8853-BA3D47A2AD16}.Release|x86.ActiveCfg = Release|Win32
 		{81DD7008-7C95-4FCD-8853-BA3D47A2AD16}.Release|x86.Build.0 = Release|Win32
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x64.ActiveCfg = Debug|x64
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x64.Build.0 = Debug|x64
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x86.ActiveCfg = Debug|Win32
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Debug|x86.Build.0 = Debug|Win32
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x64.ActiveCfg = Release|x64
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x64.Build.0 = Release|x64
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x86.ActiveCfg = Release|Win32
+		{9DDE26F5-5C94-4EC0-9718-ACED07630772}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
