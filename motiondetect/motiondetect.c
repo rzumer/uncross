@@ -7,6 +7,8 @@ typedef struct {
 	const VSVideoInfo *vi;
 
 	int compensate;
+	int threshold;
+	int show; // whether to show the processed frame or just the mask
 } MotionData;
 
 // This function is called immediately after vsapi->createFilter(). This is the only place where the video
@@ -73,13 +75,39 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 	MotionData *d = (MotionData *)* instanceData;
 
 	if (activationReason == arInitial) {
-		// Request the source frame on the first call
+		// Request the source frames on the first call
+		if (n > 0) {
+			vsapi->requestFrameFilter(n - 1, d->node, frameCtx);
+		}
+
 		vsapi->requestFrameFilter(n, d->node, frameCtx);
 	}
 	else if (activationReason == arAllFramesReady) {
 		const VSFrameRef *src = vsapi->getFrameFilter(n, d->node, frameCtx);
 
-		return src;
+		// The reason we query this on a per frame basis is because we want our filter
+		// to accept clips with varying dimensions. If we reject such content using d->vi
+		// would be better.
+		const VSFormat *fi = d->vi->format;
+		int height = vsapi->getFrameHeight(src, 0);
+		int width = vsapi->getFrameWidth(src, 0);
+
+		// When creating a new frame for output it is VERY EXTREMELY SUPER IMPORTANT to
+		// supply the "dominant" source frame to copy properties from. Frame props
+		// are an essential part of the filter chain and you should NEVER break it.
+		VSFrameRef *dst = d->compensate && d->show ? vsapi->copyFrame(src, core) : vsapi->newVideoFrame(fi, width, height, src, core);
+
+		if (n == 0) {
+			return dst;
+		}
+
+		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
+
+		// insert processing here
+
+		vsapi->freeFrame(pre);
+		vsapi->freeFrame(src);
+		return dst;
 	}
 
 	return 0;
@@ -116,12 +144,16 @@ static void VS_CC estimateCreate(const VSMap *in, VSMap *out, void *userData, VS
 		return;
 	}
 
+	d.threshold = !!vsapi->propGetInt(in, "threshold", 0, &err);
+	if (err)
+		d.threshold = 2;
+
+	d.compensate = 0;
+
 	// I usually keep the filter data struct on the stack and don't allocate it
 	// until all the input validation is done.
 	data = malloc(sizeof(d));
 	*data = d;
-
-	data->compensate = 0;
 
 	// Creates a new filter and returns a reference to it. Always pass on the in and out
 	// arguments or unexpected things may happen. The name should be something that's
@@ -164,12 +196,26 @@ static void VS_CC compensateCreate(const VSMap *in, VSMap *out, void *userData, 
 		return;
 	}
 
+	if (d.vi->width % 4 != 0 || d.vi->height % 4 != 0) {
+		vsapi->setError(out, "MotionDetect: mod4 input is required");
+		vsapi->freeNode(d.node);
+		return;
+	}
+
+	d.threshold = !!vsapi->propGetInt(in, "threshold", 0, &err);
+	if (err)
+		d.threshold = 16;
+
+	d.show = !!vsapi->propGetInt(in, "show", 0, &err);
+	if (err)
+		d.show = 0;
+
+	d.compensate = 1;
+
 	// I usually keep the filter data struct on the stack and don't allocate it
 	// until all the input validation is done.
 	data = malloc(sizeof(d));
 	*data = d;
-
-	data->compensate = 1;
 
 	// Creates a new filter and returns a reference to it. Always pass on the in and out
 	// arguments or unexpected things may happen. The name should be something that's
@@ -216,6 +262,6 @@ static void VS_CC compensateCreate(const VSMap *in, VSMap *out, void *userData, 
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
 	configFunc("github.com.rzumer.motiondetect", "motiondetect", "MotionDetect", VAPOURSYNTH_API_VERSION, 1, plugin);
-	registerFunc("Estimate", "clip:clip;", estimateCreate, 0, plugin);
-	registerFunc("Compensate", "clip:clip;", compensateCreate, 0, plugin);
+	registerFunc("Estimate", "clip:clip;threshold:int:opt;", estimateCreate, 0, plugin);
+	registerFunc("Compensate", "clip:clip;threshold:int:opt;show:int:opt;", compensateCreate, 0, plugin);
 }
