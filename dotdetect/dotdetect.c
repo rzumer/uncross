@@ -105,8 +105,8 @@ int **generateDotCrawlMap(const VSFrameRef *frame, int threshold, const VSAPI *v
 				}
 			}
 
-			if (abs(srcp[x] - srcp[x + 2]) - abs(srcp[x + 2] - srcp[x + 4]) < threshold
-				&& abs(srcp[x + 1] - srcp[x + 3]) - abs(srcp[x + 3] + srcp[x + 5]) < threshold) {
+			if (abs(srcp[x] - srcp[x + 2]) - abs(-srcp[x + 2] + srcp[x + 4]) < threshold
+				&& abs(srcp[x + 1] - srcp[x + 3]) - abs(-srcp[x + 3] + srcp[x + 5]) < threshold) {
 				dcMap[y][x] = 255;
 			}
 		}
