@@ -64,6 +64,35 @@ static void writePlaneMatrix(VSFrameRef *frame, int plane, int **planeData, cons
 	}
 }
 
+int **generateMotionEstimationMap(const VSFrameRef *frame, const VSFrameRef *pre, int threshold, const VSAPI *vsapi) {
+	int plane = 0; // Y plane index assuming YUV or YIQ input
+	int height = vsapi->getFrameHeight(frame, plane);
+	int width = vsapi->getFrameWidth(frame, plane);
+
+	// Allocate destination matrix.
+	int **mMap = malloc(height * sizeof *mMap);
+
+	for (int i = 0; i < height; i++) {
+		mMap[i] = malloc(width * sizeof *mMap[i]);
+	}
+
+	// Read the frame data into the matrix.
+	const uint8_t *srcp = vsapi->getReadPtr(frame, plane);
+	int stride = vsapi->getStride(frame, plane);
+
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; (x + 5) < width; x++) {
+			mMap[y][x] = 0;
+
+			// check each block to find best mv based on SAD and compare its distance to thresh
+		}
+
+		srcp += stride;
+	}
+
+	return mMap;
+}
+
 // This is the main function that gets called when a frame should be produced. It will, in most cases, get
 // called several times to produce one frame. This state is being kept track of by the value of
 // activationReason. The first call to produce a certain frame n is always arInitial. In this state
@@ -206,7 +235,7 @@ static void VS_CC compensateCreate(const VSMap *in, VSMap *out, void *userData, 
 	if (err)
 		d.threshold = 16;
 
-	d.show = !!vsapi->propGetInt(in, "show", 0, &err);
+	d.show = !!vsapi->propGetInt(in, "show", 1, &err);
 	if (err)
 		d.show = 0;
 

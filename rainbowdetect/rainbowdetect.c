@@ -93,9 +93,11 @@ int **generateRainbowMap(const VSFrameRef *frame, const VSFrameRef *previous, Vi
 			int du = abs(srcpu[x] - prepu[x]);
 			int dv = abs(srcpv[x] - prepv[x]);
 
-			if (srcpy[x] > context->threshY
-				&& (context->threshU1 < du && du < context->threshU2
-				|| context->threshV1 < dv && dv < context->threshV2)) {
+			if (
+				srcpy[x] > context->threshY
+				&& ((context->threshU1 < du && du < context->threshU2)
+				|| (context->threshV1 < dv && dv < context->threshV2))
+				) {
 				rbMap[y][x] = 255;
 			}
 		}
@@ -130,6 +132,7 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 	}
 	else if (activationReason == arAllFramesReady) {
 		const VSFrameRef *src = vsapi->getFrameFilter(n, d->node, frameCtx);
+		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
 
 		// The reason we query this on a per frame basis is because we want our filter
 		// to accept clips with varying dimensions. If we reject such content using d->vi
@@ -144,10 +147,10 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		VSFrameRef *dst = vsapi->newVideoFrame(fi, width, height, src, core);
 
 		if (n == 0) {
+			vsapi->freeFrame(pre);
+			vsapi->freeFrame(src);
 			return dst;
 		}
-
-		const VSFrameRef *pre = vsapi->getFrameFilter(n - 1, d->node, frameCtx);
 
 		int **rbMap = generateRainbowMap(src, pre, d, vsapi);
 
@@ -198,19 +201,19 @@ static void VS_CC create(const VSMap *in, VSMap *out, void *userData, VSCore *co
 	if (err)
 		d.threshY = 10;
 
-	d.threshU1 = !!vsapi->propGetInt(in, "threshU1", 0, &err);
+	d.threshU1 = !!vsapi->propGetInt(in, "threshU1", 1, &err);
 	if (err)
 		d.threshU1 = 5;
 
-	d.threshV1 = !!vsapi->propGetInt(in, "threshV1", 0, &err);
+	d.threshV1 = !!vsapi->propGetInt(in, "threshV1", 2, &err);
 	if (err)
 		d.threshV1 = 5;
 
-	d.threshU2 = !!vsapi->propGetInt(in, "threshU2", 0, &err);
+	d.threshU2 = !!vsapi->propGetInt(in, "threshU2", 3, &err);
 	if (err)
 		d.threshU2 = 20;
 
-	d.threshV2 = !!vsapi->propGetInt(in, "threshV2", 0, &err);
+	d.threshV2 = !!vsapi->propGetInt(in, "threshV2", 4, &err);
 	if (err)
 		d.threshV2 = 20;
 
