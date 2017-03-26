@@ -94,8 +94,8 @@ int **generateRainbowMap(const VSFrameRef *frame, const VSFrameRef *previous, Vi
 			int dv = abs(srcpv[x] - prepv[x]);
 
 			if (srcpy[x] > context->threshY
-				&& (context->threshU1 < du && du > context->threshU2
-				|| context->threshV1 < dv && dv > context->threshV2)) {
+				&& (context->threshU1 < du && du < context->threshU2
+				|| context->threshV1 < dv && dv < context->threshV2)) {
 				rbMap[y][x] = 255;
 			}
 		}
