@@ -155,6 +155,10 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		// write the DCMap in the Y plane
 		writePlaneMatrix(dst, 0, dcMap, vsapi);
 
+		// deallocate the dot crawl map
+		for (int i = 0; i < height; i++) {
+			free(dcMap[i]);
+		}
 		free(dcMap);
 		vsapi->freeFrame(src);
 		return dst;

@@ -157,6 +157,10 @@ static const VSFrameRef *VS_CC getFrame(int n, int activationReason, void **inst
 		// write the DCMap in the Y plane
 		writePlaneMatrix(dst, 0, rbMap, vsapi);
 
+		// deallocate the rainbow map
+		for (int i = 0; i < height; i++) {
+			free(rbMap[i]);
+		}
 		free(rbMap);
 		vsapi->freeFrame(pre);
 		vsapi->freeFrame(src);
